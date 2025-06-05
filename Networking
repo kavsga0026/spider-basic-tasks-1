@@ -1,0 +1,91 @@
+import pyshark
+import base64
+import re
+
+# Change this to your PCAP file path
+pcap_path = 'sample.pcap'
+
+cap = pyshark.FileCapture(pcap_path, use_json=True, include_raw=True)
+
+dns_queries = []
+dns_query_types = set()
+http_get_requests = []
+txt_file_requests = []
+user_agents = set()
+uncommon_ports = set()
+decoy_files = []
+base64_content = ""
+decoded_base64 = ""
+
+print("[*] Analyzing PCAP file...")
+
+for packet in cap:
+    # DNS Analysis
+    if 'DNS' in packet:
+        if hasattr(packet.dns, 'qry_name'):
+            dns_queries.append(packet.dns.qry_name)
+            if hasattr(packet.dns, 'qry_type'):
+                dns_query_types.add(packet.dns.qry_type)
+
+    # HTTP Analysis
+    if 'HTTP' in packet:
+        # HTTP GET requests
+        if hasattr(packet.http, 'request_method') and packet.http.request_method == 'GET':
+            http_get_requests.append(packet.http.get_full_uri)
+            if ".txt" in packet.http.get_full_uri:
+                txt_file_requests.append(packet.http.get_full_uri)
+        
+        # User-Agent
+        if hasattr(packet.http, 'user_agent'):
+            user_agents.add(packet.http.user_agent)
+        
+        # Check for base64 content in response
+        if hasattr(packet.http, 'file_data'):
+            raw_data = packet.http.file_data
+            if re.fullmatch(r'[A-Za-z0-9+/=\\n]+', raw_data.replace('\n', '')):  # base64-like content
+                base64_content = raw_data
+                try:
+                    decoded_base64 = base64.b64decode(base64_content).decode('utf-8', errors='ignore')
+                except:
+                    pass
+    
+    # Uncommon Ports
+    if 'TCP' in packet:
+        src_port = int(packet.tcp.srcport)
+        dst_port = int(packet.tcp.dstport)
+        common_ports = {80, 443, 53, 21, 22}
+        if src_port not in common_ports and dst_port not in common_ports:
+            uncommon_ports.add((src_port, dst_port))
+
+cap.close()
+
+# Loopback info (Explanation)
+loopback_info = "A loopback interface is a virtual network interface (127.0.0.1) used by the host to communicate with itself."
+
+# Check for decoy files
+for file in txt_file_requests:
+    if 'decoy' in file.lower():
+        decoy_files.append(file)
+
+# ------------------- RESULTS -------------------
+
+print("\n--- PCAP ANALYSIS RESULTS ---")
+print(f"1. Types of traffic present: Use Wireshark 'Protocol Hierarchy' for full list.")
+print(f"2. Total DNS queries: {len(dns_queries)}")
+print(f"3. Types of DNS queries made: {dns_query_types}")
+print(f"4. What is a Loopback Interface? {loopback_info}")
+print(f"5. .txt files requested: {len(txt_file_requests)}")
+for txt in txt_file_requests:
+    print("   -", txt)
+
+print(f"6. Base64 Content Found: {'Yes' if base64_content else 'No'}")
+if decoded_base64:
+    print("   Decoded Content:\n", decoded_base64)
+
+print(f"7. Decoy file attempts: {decoy_files if decoy_files else 'None'}")
+print(f"8. Uncommon ports used: {uncommon_ports}")
+print(f"9. HTTP GET requests count: {len(http_get_requests)}")
+print(f"10. User-Agent(s) used:")
+for ua in user_agents:
+    print("   -", ua)
+
