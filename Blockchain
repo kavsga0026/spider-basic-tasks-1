@@ -1,0 +1,47 @@
+import random
+from functools import reduce
+
+PRIME = 208351617316091241234326746312124448251235562226470491514186331217050270460481
+
+def eval_polynomial(coeffs, x):
+    result = 0
+    for i, coeff in enumerate(coeffs):
+        result += coeff * (x ** i)
+    return result % PRIME
+
+def split_secret(secret, n, k):
+    coeffs = [secret] + [random.randrange(0, PRIME) for _ in range(k - 1)]
+    shares = [(x, eval_polynomial(coeffs, x)) for x in range(1, n + 1)]
+    return shares
+
+def reconstruct_secret(shares):
+    def lagrange_basis(j, x):
+        xj, _ = shares[j]
+        num, den = 1, 1
+        for m, (xm, _) in enumerate(shares):
+            if m != j:
+                num *= (x - xm) % PRIME
+                den *= (xj - xm) % PRIME
+        return num * pow(den, -1, PRIME)
+
+    secret = 0
+    for j, (xj, yj) in enumerate(shares):
+        secret += yj * lagrange_basis(j, 0)
+        secret %= PRIME
+    return secret
+
+if __name__ == "__main__":
+    secret = 123456789987654321
+    n = 6
+    k = 3
+
+    shares = split_secret(secret, n, k)
+    selected_shares = random.sample(shares, k)
+    recovered = reconstruct_secret(selected_shares)
+
+    print(f"Original Secret: {secret}")
+    print("Generated Shares:")
+    for s in shares:
+        print(f"{s}")
+    print(f"\nSelected Shares: {selected_shares}")
+    print(f"Recovered Secret: {recovered}")
